@@ -27,6 +27,12 @@ button{font:inherit;cursor:pointer;border:none}
 .choices button:hover:not(:disabled){background:rgba(255,255,255,.18)}
 .choices button.sel,.choices button.sel:hover{background:var(--aqua);color:var(--ink);border-color:#c9fbff}
 .choices button:disabled{opacity:.3;cursor:default}
+.choices.sens{align-items:center;gap:10px}
+.choices.sens .lo{font-size:12px;opacity:.6;font-weight:700}
+.choices.sens b{min-width:34px;text-align:center;padding:6px 0;border-radius:999px;background:var(--aqua);color:var(--ink);font-size:15px}
+#sens{-webkit-appearance:none;appearance:none;width:190px;height:8px;border-radius:99px;background:linear-gradient(90deg,rgba(255,255,255,.15),var(--aqua));outline:none;cursor:pointer}
+#sens::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#c9fbff;border:3px solid var(--ink);cursor:pointer}
+#sens::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#c9fbff;border:3px solid var(--ink);cursor:pointer}
 .desc{grid-column:1/3;font-size:12.5px;line-height:1.45;opacity:.85;max-width:420px}
 .mapPick{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px}
 .mapPick canvas{width:300px;height:300px;border-radius:10px;cursor:pointer;display:block}
@@ -87,17 +93,17 @@ h2.head{font-size:32px;font-weight:900;letter-spacing:1px;text-shadow:0 4px 0 #0
     <div class="menuRow">
       <div class="panel">
         <h2>Mode</h2>
-        <div class="choices" id="chMode"><button data-v="loup" class="sel">Loup</button><button data-v="epervier">Épervier</button><button data-v="drapeau">Drapeau</button><button data-v="parcours">Parcours</button></div>
+        <div class="choices" id="chMode"><button data-v="loup" class="sel">Loup</button><button data-v="epervier">Épervier</button><button data-v="drapeau">Drapeau</button><button data-v="parcours">Parcours</button><button data-v="zone">Zone</button></div>
         <h2>Joueurs</h2>
         <div class="choices" id="chPlayers"><button data-v="2" class="sel">2</button><button data-v="3">3</button><button data-v="4">4</button></div>
         <h2 id="lblTime">Durée</h2>
-        <div class="choices" id="chTime"><button data-v="60">1 min</button><button data-v="120" class="sel">2 min</button><button data-v="180">3 min</button></div>
+        <div class="choices" id="chTime"><button data-v="60">1 min</button><button data-v="120" class="sel">2 min</button><button data-v="180">3 min</button><button data-v="240">4 min</button><button data-v="300">5 min</button></div>
         <h2>Format</h2>
         <div class="choices" id="chFormat"><button data-v="single" class="sel">Partie</button><button data-v="tournament">Tournoi</button></div>
         <h2 id="lblBest">Manches</h2>
         <div class="choices" id="chBest"><button data-v="3" class="sel">3</button><button data-v="5">5</button><button data-v="7">7</button></div>
-        <h2>Maniabilité</h2>
-        <div class="choices" id="chHandling"><button data-v="vive">Vive</button><button data-v="normale" class="sel">Normale</button><button data-v="douce">Douce</button></div>
+        <h2>Sensibilité</h2>
+        <div class="choices sens"><span class="lo">1</span><input type="range" id="sens" min="1" max="10" step="1" value="5"><span class="lo">10</span><b id="sensVal">5</b></div>
         <h2>Touches J2</h2>
         <div class="choices" id="chKeys"><button data-v="azerty" class="sel">Q Z D (AZERTY)</button><button data-v="qwerty">A W D (QWERTY)</button></div>
         <p class="desc" id="modeDesc"></p>
@@ -158,12 +164,11 @@ const VW = 1000, VH = 560;
 const U = 100, LV = U;
 const GRAV_UP = 2300, GRAV_DOWN = 1550, JUMP_H = 115, JUMP_V = Math.sqrt(2 * GRAV_UP * JUMP_H), GRAV = GRAV_UP;
 const RUN = 250, MAX_FALL = 820;
-// maniabilité (réglable dans le menu) : accélération / freinage au sol et en l'air, en px/s²
-const HANDLING = {
-  vive:    { ga: 5200, gd: 6000, aa: 3200, ad: 2200, run: 1.0 },
-  normale: { ga: 2700, gd: 3000, aa: 1700, ad: 950, run: 0.97 },
-  douce:   { ga: 1600, gd: 1900, aa: 1050, ad: 550, run: 0.93 },
-};
+// sensibilité (curseur 1 à 10 dans le menu) : 10 = réponse immédiate, 1 = beaucoup d'inertie
+function handlingFor(v) {
+  const k = (clamp(+v || 5, 1, 10) - 1) / 9, ga = 800 * Math.pow(7, k);
+  return { ga, gd: ga * 1.15, aa: ga * 0.62, ad: ga * 0.34, run: 0.9 + 0.1 * k };
+}
 const STEP = 1 / 120, COYOTE = 0.09, BUFFER = 0.13;
 const STEP_UP = 16, SNAP_DOWN = 8, LEDGE = 14, CORNER = 11, EPS = 0.01;
 const PW = 26, PH = 28;
@@ -196,7 +201,7 @@ function poly(g, pts) { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x
 /* ---------- état global ---------- */
 const cv = $('cv'), ctx = cv.getContext('2d', { alpha: false }), stage = $('stage');
 let RES = 0, T = 0, G = null, current = 'scrMenu';
-const settings = { mode: 'loup', players: 2, duration: 120, map: 'epave', format: 'single', bestOf: 3, handling: 'normale', epRound: 30 };
+const settings = { mode: 'loup', players: 2, duration: 120, map: 'epave', format: 'single', bestOf: 3, sens: 5, epRound: 30 };
 const held = {};
 const cam = { x: 0, y: 0, z: 1 };
 
@@ -209,6 +214,7 @@ const cam = { x: 0, y: 0, z: 1 };
    ========================================================= */
 const hitR = (x, y, s) => x < s.x + s.w - EPS && x + PW > s.x + EPS && y < s.y + s.h - EPS && y + PH > s.y + EPS;
 function blocks(p, s) {
+  if (s.off) return false;
   switch (s.kind) {
     case 'plat': case 'wall': case 'bounce': case 'launch': return true;
     case 'trap': return !G.trapOpen;
@@ -218,6 +224,7 @@ function blocks(p, s) {
   return false;
 }
 function stands(p, s) {
+  if (s.off) return false;
   switch (s.kind) {
     case 'plat': case 'bounce': case 'launch': return true;
     case 'trap': return !G.trapOpen;
@@ -388,6 +395,24 @@ function carryRot(p, R) {
   if (free(p, tx, ty)) { p.x = tx; p.y = ty; }
 }
 
+/* ---------- geysers (courants ascendants), plateformes qui s'effritent ---------- */
+const GEY_V = 470, GEY_ACC = 3600;
+function geyserOn(gy) { const t = ((G.elapsed || 0) + gy.phase) % gy.period; return t < gy.on; }
+function inGeyser(p) {
+  const cx = p.x + PW / 2, cy = p.y + PH / 2;
+  for (const gy of G.map.geysers) if (cx > gy.x1 && cx < gy.x2 && cy < gy.bot && cy > gy.top && geyserOn(gy)) return gy;
+  return null;
+}
+function updateCrumbles(dt) {
+  for (const s of G.solids) {
+    if (!s.crumble) continue;
+    if (!s.state) s.state = 'ok';
+    if (s.state === 'ok') { if (G.players.some(p => !p.out && p.onGround && p.ground && p.ground.s === s)) { s.state = 'shake'; s.t = 0.6; } }
+    else if (s.state === 'shake') { s.t -= dt; s.shake = Math.sin(T * 70) * 1.5; if (s.t <= 0) { s.state = 'gone'; s.off = true; s.shake = 0; s.t = 4; dust(s.x + s.w / 2, s.y + s.h); for (const p of G.players) if (p.ground && p.ground.s === s) { p.onGround = false; p.ground = null; } } }
+    else if (s.state === 'gone') { s.t -= dt; if (s.t <= 0 && !G.players.some(p => !p.out && hitR(p.x, p.y, s))) { s.state = 'ok'; s.off = false; } }
+  }
+}
+
 /* ---------- plateformes mobiles, mur qui tombe ---------- */
 function updateMovers(dt) {
   for (const m of G.movers) {
@@ -473,7 +498,7 @@ function updatePlayer(p, dt) {
   let dir = 0;
   if (can) { if (held[p.keys.left]) dir--; if (held[p.keys.right]) dir++; }
   p.kbVx *= Math.exp(-dt * 7); if (Math.abs(p.kbVx) < 5) p.kbVx = 0;
-  const H = HANDLING[settings.handling] || HANDLING.normale;
+  const H = handlingFor(settings.sens);
   const target = dir * RUN * H.run * G.mode.speed(p);
   if (p.mvx === undefined) p.mvx = 0;
   if (p.launchT <= 0 && Math.abs(p.mvx) > RUN * 1.05) p.mvx = Math.sign(p.mvx) * RUN;   // fin de propulsion
@@ -482,7 +507,8 @@ function updatePlayer(p, dt) {
   if (p.mvx < target) p.mvx = Math.min(target, p.mvx + acc * dt); else if (p.mvx > target) p.mvx = Math.max(target, p.mvx - acc * dt);
   let vx = p.mvx;
   if (p.launchT > 0) { p.launchT -= dt; vx = p.mvx = p.launchVx; }
-  p.vx = vx + p.kbVx;
+  const carry = (p.onGround && p.ground && p.ground.s && p.ground.s.conv) || 0;   // tapis roulant (coulée)
+  p.vx = vx + p.kbVx + carry;
   if (dir) p.face = dir;
   if (p.onGround) p.coyote = COYOTE; else p.coyote -= dt;
   if (can && p.launchT <= 0 && (p.jumpBuf > 0 || held[p.keys.jump]) && p.coyote > 0 && p.vy >= 0) {
@@ -491,7 +517,9 @@ function updatePlayer(p, dt) {
   }
   const wasGround = p.onGround, vyBefore = p.vy;
   const onRot = p.ground && p.ground.rot;
-  if (!p.onGround || onRot) p.vy = Math.min(p.vy + (p.vy < 0 ? GRAV_UP : GRAV_DOWN) * dt, MAX_FALL);
+  const gz = G.map.geysers && inGeyser(p);
+  if (gz) { if (p.vy > -GEY_V) p.vy = Math.max(p.vy - GEY_ACC * dt, -GEY_V); if (p.onGround) { p.onGround = false; p.ground = null; } }
+  else if (!p.onGround || onRot) p.vy = Math.min(p.vy + (p.vy < 0 ? GRAV_UP : GRAV_DOWN) * dt, MAX_FALL);
   const n = Math.max(1, Math.ceil(Math.max(Math.abs(p.vx), Math.abs(p.vy)) * dt / 6));
   const sdt = dt / n;
   for (let i = 0; i < n; i++) {
@@ -789,6 +817,7 @@ const PAL = {
   wallwood: { top: '#9a6438', base: '#80512b', dark: '#5c3818', hi: 'rgba(255,220,180,.25)', line: '#2f1a08', joint: null, r: 2 },
   floorwood: { top: '#c58b55', base: '#a26c3d', dark: '#6f4521', hi: 'rgba(255,235,200,.5)', line: '#3d220e', joint: 'rgba(50,25,8,.3)', jw: 70, r: 0 },
   slab: { top: '#e2ddd4', base: '#a39c90', dark: '#6c665d', hi: 'rgba(255,255,255,.85)', line: '#26201b', joint: 'rgba(30,25,20,.35)', jw: 90, r: 1 },
+  basalt: { top: '#e6d6cf', base: '#a8968f', dark: '#6b5a58', hi: 'rgba(255,236,220,.9)', line: '#1a0f12', joint: 'rgba(90,40,30,.35)', jw: 48, r: 3 },
   slabwall: { top: '#b5aea2', base: '#8f887d', dark: '#6c665d', hi: 'rgba(255,255,255,.35)', line: '#26201b', joint: null, r: 1 },
 };
 function slopeQuad(g, sl) { g.beginPath(); g.moveTo(sl.x1, sl.y1); g.lineTo(sl.x2, sl.y2); g.lineTo(sl.x2, sl.y2 + sl.t); g.lineTo(sl.x1, sl.y1 + sl.t); g.closePath(); }
@@ -1338,7 +1367,62 @@ function mapParcours() {
   return m;
 }
 
-const MAP_BUILDERS = { epave: () => decorEpave(mapEpave()), favelas: () => decorFavelas(mapFavelas()), epervier: () => decorEpervier(mapEpervier()), drapeau: () => decorDrapeau(mapDrapeau()), parcours: () => decorParcours(mapParcours()) };
+
+/* =========================================================
+   6. ZONE — LE VOLCAN (26 × 15 unités, trois fois plus grand)
+   Nouveautés : geysers (courants ascendants qui s'allument et
+   s'éteignent), roche ponce qui s'effrite sous les pieds, coulées
+   (tapis roulants de lave refroidie) ; plus les blocs de basalte
+   qui tombent et les perles.
+   ========================================================= */
+function mapZone() {
+  const m = newMap({ id: 'zone', name: 'Le Volcan', skin: 'kid', W: 26 * U, H: 15 * U, FLOOR: 14.4 * U, edge: '#000' });
+  const L = m.L, Wd = 26;
+  P(m, 0, Wd, 0, 'basalt', { h: 0.6 * U });
+  // symétrie gauche / droite autour du centre (x = 13)
+  const both = (x1, x2, k, kind, conv) => {
+    for (const [a, b, dir] of [[x1, x2, 1], [Wd - x2, Wd - x1, -1]]) {
+      if (kind === 'crumble') addS(m, { x: a * U, y: L(k), w: (b - a) * U, h: TH, kind: 'plat', mat: 'pumice', crumble: true, dyn: true });
+      else if (kind === 'conv') addS(m, { x: a * U, y: L(k), w: (b - a) * U, h: TH, kind: 'plat', mat: 'flow', conv: conv * dir, dyn: true });
+      else P(m, a, b, k, 'basalt', { h: 20 });
+    }
+  };
+  both(1, 3, 1); both(9.5, 11.5, 1, 'conv', 110);          // coulées du bas : vers le centre
+  both(3.3, 5, 2); both(7, 9, 2);
+  both(5.3, 6.8, 3);
+  both(2.5, 5, 4); both(7.2, 9.5, 4, 'crumble');
+  both(0.5, 2.2, 5); both(5.3, 7, 5); both(9.8, 11.5, 5);
+  both(2.5, 4.6, 6); both(7.3, 9.5, 6, 'conv', -100);       // coulées du milieu : vers les bords
+  both(0.5, 2.2, 7); both(4.9, 7, 7); both(9.8, 12, 7);
+  both(2.5, 4.6, 8); both(7.3, 9.5, 8);
+  both(0.5, 2.2, 9, 'crumble'); both(4.9, 7, 9); both(9.8, 11.6, 9);
+  both(2.5, 4.6, 10); both(7.3, 9.6, 10);
+  both(4.9, 7, 11); both(10, 12.3, 11);                      // le sommet, ouvert au-dessus du grand geyser
+  both(7.3, 9.5, 12, 'crumble');
+  both(5, 7, 13);
+  // geysers : le grand au centre (du sol au-dessus du sommet), deux le long des bords
+  m.geysers = [
+    { x1: 12.45 * U, x2: 13.55 * U, top: L(11.7), bot: L(0) + 4, period: 6, on: 4, phase: 0 },
+    { x1: 0.02 * U, x2: 0.47 * U, top: L(10.5), bot: L(0) + 4, period: 5, on: 3, phase: 1.5 },
+    { x1: 25.53 * U, x2: 25.98 * U, top: L(10.5), bot: L(0) + 4, period: 5, on: 3, phase: 4 },
+  ];
+  // blocs de basalte qui tombent sur le sommet
+  addS(m, thwompMover({ x: 10.7 * U, y: 0.25 * U, w: 0.8 * U, h: 0.7 * U, kind: 'plat', mat: 'basaltblock', dyn: true }, L(11)));
+  addS(m, thwompMover({ x: 14.5 * U, y: 0.25 * U, w: 0.8 * U, h: 0.7 * U, kind: 'plat', mat: 'basaltblock', dyn: true }, L(11)));
+  m.orbPairs.push(
+    { a: { x: 2 * U, y: L(1) }, b: { x: 22.45 * U, y: L(10) }, style: 'ring' },
+    { a: { x: 3.55 * U, y: L(10) }, b: { x: 24 * U, y: L(1) }, style: 'ring' },
+    { a: { x: 8.4 * U, y: L(8) }, b: { x: 18 * U, y: L(2) }, style: 'full' },
+    { a: { x: 6 * U, y: L(13) }, b: { x: 13 * U, y: L(0) }, style: 'full' });
+  m.spawns = [{ x: 2 * U, y: L(1) }, { x: 24 * U, y: L(1) }, { x: 3.55 * U, y: L(10) }, { x: 22.45 * U, y: L(10) }];
+  m.paintFar = g => {};
+  m.paintBack = g => {};
+  m.paintFore = g => { paintSolids(g, m, mulberry32(12)); };
+  m.dynBack = () => {}; m.dynFront = () => {};
+  return m;
+}
+
+const MAP_BUILDERS = { epave: () => decorEpave(mapEpave()), favelas: () => decorFavelas(mapFavelas()), epervier: () => decorEpervier(mapEpervier()), drapeau: () => decorDrapeau(mapDrapeau()), parcours: () => decorParcours(mapParcours()), zone: () => decorZone(mapZone()) };
 
 /* =========================================================
    DÉCORS (arrière-plans) — toujours voilés et désaturés pour que
@@ -1664,6 +1748,74 @@ function decorParcours(m) {
   return m;
 }
 
+/* ---------------- ZONE : LE VOLCAN ---------------- */
+function fracRidge(n, rough, seed) { const r = mulberry32(seed), pts = new Array(n + 1).fill(0); let step = n, amp = 1; pts[0] = r() - .5; pts[n] = r() - .5; while (step > 1) { const h = step / 2; for (let i = h; i < n; i += step) pts[i] = (pts[i - h] + pts[i + h]) / 2 + (r() - .5) * amp; amp *= rough; step = h; } return pts; }
+function decorZone(m) {
+  const L = m.L;
+  m.paintFar = g => {
+    const rnd = mulberry32(61);
+    const gr = g.createLinearGradient(0, 0, 0, m.H);
+    gr.addColorStop(0, '#1a0f22'); gr.addColorStop(.35, '#3d1730'); gr.addColorStop(.7, '#8a2f2a'); gr.addColorStop(1, '#d9612c');
+    g.fillStyle = gr; g.fillRect(0, 0, m.W, m.H);
+    // lueur du cratère
+    const cx = 13 * U, cy = L(9.6);
+    const gl = g.createRadialGradient(cx, cy, 10, cx, cy, 9 * U); gl.addColorStop(0, 'rgba(255,170,80,.75)'); gl.addColorStop(.2, 'rgba(255,110,50,.3)'); gl.addColorStop(1, 'rgba(255,90,40,0)');
+    g.fillStyle = gl; g.fillRect(0, 0, m.W, m.H);
+    // panache de fumée
+    for (let i = 0; i < 70; i++) { const t = rnd(), x = cx + (rnd() - .5) * (1 + t * 9) * U * .6 + t * 3 * U, y = cy - t * 8 * U, r = (0.4 + t * 1.6) * U * (0.5 + rnd() * .5); const c = g.createRadialGradient(x, y, 0, x, y, r); c.addColorStop(0, `rgba(40,25,35,${0.35 * (1 - t * .6)})`); c.addColorStop(1, 'rgba(40,25,35,0)'); g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+    // chaînes lointaines
+    const range = (base, amp, seed, col) => { const n = 256, pts = fracRidge(n, .55, seed); g.fillStyle = col; g.beginPath(); g.moveTo(0, m.H); for (let i = 0; i <= n; i++) g.lineTo(i / n * m.W, base - (pts[i] + .5) * amp); g.lineTo(m.W, m.H); g.closePath(); g.fill(); };
+    range(L(4.5), 3 * U, 3, 'rgba(70,25,40,.8)');
+    // le volcan
+    const vol = () => { g.beginPath(); g.moveTo(3 * U, L(0)); const n = 60, pts = fracRidge(n, .5, 9);
+      for (let i = 0; i <= n; i++) { const t = i / n, x = lerp(3, 23, t) * U; const peak = 1 - Math.pow(Math.abs(t - .5) * 2, 1.6); let y = L(0) - peak * 9.4 * U + pts[i] * 40; if (Math.abs(t - .5) < .07) y = Math.max(y, L(9.2) + Math.abs(t - .5) * 200); g.lineTo(x, y); }
+      g.lineTo(23 * U, L(0)); g.closePath(); };
+    vol(); const vg = g.createLinearGradient(0, L(9.6), 0, L(0)); vg.addColorStop(0, '#3a1a26'); vg.addColorStop(1, '#22121c'); g.fillStyle = vg; g.fill();
+    g.save(); vol(); g.clip();
+    // coulées de lave sur les flancs
+    for (const [x0, dx, w] of [[12.6, -5.5, 14], [13.3, 4.5, 12], [12.9, -2.2, 9], [13.1, 7.5, 8]]) { g.strokeStyle = 'rgba(255,120,40,.55)'; g.lineWidth = w; g.lineCap = 'round'; g.beginPath(); g.moveTo(x0 * U, L(9.2)); let x = x0 * U, y = L(9.2); for (let k = 1; k <= 14; k++) { const t = k / 14; x = (x0 + dx * t) * U + Math.sin(k * 1.7) * 20; y = lerp(L(9.2), L(0), Math.pow(t, .8)); g.lineTo(x, y); } g.stroke(); g.strokeStyle = 'rgba(255,220,120,.4)'; g.lineWidth = w * .3; g.stroke(); }
+    g.restore();
+    fogOver(g, 'rgba(60,20,30,.35)', m);
+  };
+  m.paintBack = g => {
+    const rnd = mulberry32(62);
+    // falaises de basalte sur les côtés (orgues), derrière les plateformes
+    const cliff = (x0, x1, dir) => { for (let x = x0; x < x1; x += 22 + rnd() * 10) { const t = dir > 0 ? (x - x0) / (x1 - x0) : (x1 - x) / (x1 - x0); const h = (12.5 - t * 9 + rnd() * 1.2) * U; const w = 20 + rnd() * 10; g.fillStyle = `rgb(${38 + rnd() * 10},${26 + rnd() * 8},${36 + rnd() * 10})`; g.fillRect(x, L(0) - h, w, h); g.fillStyle = 'rgba(255,140,90,.08)'; g.fillRect(x, L(0) - h, 3, h); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(x + w - 4, L(0) - h, 4, h); g.fillStyle = 'rgba(70,50,60,.9)'; g.beginPath(); g.moveTo(x, L(0) - h); g.lineTo(x + w / 2, L(0) - h - 8); g.lineTo(x + w, L(0) - h); g.closePath(); g.fill(); } };
+    cliff(0, 4.2 * U, 1); cliff(21.8 * U, 26 * U, -1);
+    // fissures de lave sur les falaises
+    for (let i = 0; i < 16; i++) { const left = i % 2, x = (left ? rnd() * 3.6 : 22.2 + rnd() * 3.6) * U, y = L(1 + rnd() * 9); g.strokeStyle = 'rgba(255,120,50,.55)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) g.lineTo(x + (rnd() - .5) * 30, y + k * 14); g.stroke(); }
+    // rochers et cheminées au loin, au pied
+    for (let i = 0; i < 14; i++) { const x = rnd() * m.W, w = 40 + rnd() * 80, h = 20 + rnd() * 50; g.fillStyle = 'rgba(30,18,26,.85)'; g.beginPath(); g.ellipse(x, L(0), w, h, 0, Math.PI, 0); g.fill(); }
+    fogOver(g, 'rgba(60,20,30,.38)', m);
+  };
+  const baseFore = m.paintFore;
+  m.paintFore = g => {
+    baseFore(g);
+    const rnd = mulberry32(63);
+    // le sol : fissures incandescentes
+    for (let i = 0; i < 26; i++) { const x = rnd() * m.W; g.strokeStyle = 'rgba(255,130,50,.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, L(0) + 6); for (let k = 0; k < 4; k++) g.lineTo(x + (k + 1) * (10 + rnd() * 12) * (rnd() < .5 ? -1 : 1), L(0) + 6 + rnd() * 30); g.stroke(); }
+    // bouches des geysers (au ras du sol : rien n'y accroche)
+    for (const gy of m.geysers) { const cx = (gy.x1 + gy.x2) / 2, w = gy.x2 - gy.x1; g.fillStyle = '#1d1419'; g.beginPath(); g.ellipse(cx, L(0) + 3, w / 2 + 6, 6, 0, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(255,170,90,.7)'; g.lineWidth = 2; g.stroke(); }
+  };
+  m.dynBack = c => {
+    // braises qui montent
+    for (let i = 0; i < 40; i++) { const sp = 30 + (i * 37) % 40, x = ((i * 613) % 2600) + Math.sin(T * .8 + i) * 20, y = L(0) - ((T * sp + i * 97) % (14 * U)); c.fillStyle = `rgba(255,${140 + (i * 13) % 80},60,${0.5 + 0.4 * Math.sin(T * 3 + i)})`; c.fillRect(x, y, 2.5, 2.5); }
+    // colonnes des geysers : vapeur quand ils soufflent, petites bouffées sinon
+    for (const gy of m.geysers) {
+      const on = G && G.state !== undefined ? geyserOn(gy) : false, cx = (gy.x1 + gy.x2) / 2, w = gy.x2 - gy.x1, h = gy.bot - gy.top;
+      const t = ((G && G.elapsed || 0) + gy.phase) % gy.period, warn = !on && gy.period - t < 0.8;
+      if (on) {
+        const gr = c.createLinearGradient(0, gy.top, 0, gy.bot); gr.addColorStop(0, 'rgba(255,240,230,0)'); gr.addColorStop(.25, 'rgba(255,235,225,.16)'); gr.addColorStop(1, 'rgba(255,220,200,.3)');
+        c.fillStyle = gr; c.fillRect(gy.x1, gy.top, w, h);
+        for (let i = 0; i < 26; i++) { const y = gy.bot - ((T * 380 + i * h / 26) % h), k = (gy.bot - y) / h, x = cx + Math.sin(T * 4 + i * 1.7) * w * .3; c.fillStyle = `rgba(255,245,240,${0.38 * (1 - k)})`; c.beginPath(); c.arc(x, y, w * (.22 + k * .25), 0, Math.PI * 2); c.fill(); }
+      } else {
+        for (let i = 0; i < 5; i++) { const y = gy.bot - ((T * 60 + i * 14) % 70), k = (gy.bot - y) / 70; c.fillStyle = `rgba(255,240,230,${(warn ? .5 : .18) * (1 - k)})`; c.beginPath(); c.arc(cx + Math.sin(i + T) * 6, y, 6 + k * 10, 0, Math.PI * 2); c.fill(); }
+      }
+    }
+  };
+  return m;
+}
+
 /* =========================================================
    MODES DE JEU
    Chaque mode fournit : init, onStart, update, canMove, speed,
@@ -1674,6 +1826,7 @@ const MODE_INFO = {
   loup: { name: 'Loup', desc: "Le loup chasse les autres : un contact et c'est l'autre qui devient loup. À la fin du temps, celui qui a été loup le moins longtemps gagne. Les perles téléportent ; les plantes cachent.", timed: true },
   epervier: { name: 'Épervier', desc: "Un épervier au centre, les oiseaux dans la niche de gauche. Au signal, traversez jusqu'au trou d'en face sans vous faire toucher : chaque oiseau touché devient épervier à son tour. Le dernier oiseau libre gagne.", timed: false },
   drapeau: { name: 'Drapeau', desc: "Chacun a sa zone (teintée de sa couleur). Attrapez le drapeau, volez-le en touchant celui qui le porte, et ramenez-le chez vous : 1 point par seconde tant que vous le gardez dans votre zone.", timed: true },
+  zone: { name: 'Zone', desc: "Chacun pour soi sur une carte trois fois plus grande : 5 vies chacun. Foncer sur quelqu'un ou lui sauter dessus lui retire une vie. Au bout d'une minute, la zone se referme sur un point tiré au hasard : 2 s dehors = une vie en moins. Le dernier debout gagne.", timed: true },
   parcours: { name: 'Parcours', desc: "Le chat et la souris, à 2. La souris doit atteindre la perle en haut à droite (levier, trappe, pics, boules) puis rentrer : si le chat la touche avant, il gagne.", timed: false },
 };
 function mapIdFor(s) { return s.mode === 'loup' ? s.map : s.mode; }
@@ -1937,7 +2090,91 @@ const ModeParcours = {
       rows: [{ p: w, tag: w.role === 'cat' ? 'CHAT' : 'SOURIS', txt: 'vainqueur' }, { p: l, tag: '', txt: l.role === 'cat' ? 'chat' : 'souris' }] };
   },
 };
-const MODES = { loup: ModeLoup, epervier: ModeEpervier, drapeau: ModeDrapeau, parcours: ModeParcours };
+
+/* ---------------- ZONE (bataille royale) ---------------- */
+const ZONE_HP = 5, ZONE_TICK = 2;
+const ModeZone = {
+  hpBars: true,
+  init() {
+    const m = G.map, sp = shuffle(m.spawns);
+    for (let i = 0; i < settings.players; i++) G.players.push(Object.assign(newPlayer(PLAYER_DEFS[i], sp[i]), { hp: ZONE_HP, zoneT: 0, hits: 0, outAt: null, hurtT: 0 }));
+    G.time = settings.duration;
+    const surf = m.solids.filter(s => s.kind === 'plat' && !s.crumble && s.w >= 0.8 * U && s.y > 2 * U);
+    const s = surf[Math.floor(Math.random() * surf.length)];
+    const appear = settings.duration >= 120 ? 60 : settings.duration / 3;
+    G.zone = { cx: s.x + 20 + Math.random() * (s.w - 40), cy: s.y - 40, r0: Math.hypot(m.W, m.H), r: Infinity, appear, on: false, warned: false };
+    G.hearts = []; G.nextHeart = rand(18, 26);
+    orbsInit(rand(8, 12));
+  },
+  hurt(p, by) {
+    if (p.out) return;
+    p.hp--; p.hurtT = 0.45;
+    burst(p.x + PW / 2, p.y + PH / 2, by ? [by.color, p.color] : ['#ff7a35', p.color]);
+    if (by) by.hits++;
+    if (p.hp <= 0) { p.out = true; p.outAt = G.elapsed; p.travel = null; burst(p.x + PW / 2, p.y + PH / 2, [p.color, '#fff', '#ffcf80']); G.banner = { text: `${p.name} est éliminé !`, t: 1.2 }; }
+  },
+  onStart() { G.banner = { text: 'Chacun pour soi !', t: 1 }; },
+  canMove: () => true,
+  speed: () => 1,
+  canUseOrb: () => true,
+  onCrush(p) { this.hurt(p, null); if (!p.out) respawnAt(p, G.map.spawns[Math.floor(Math.random() * G.map.spawns.length)], 0.4); },
+  update(dt) {
+    const z = G.zone, alive = G.players.filter(p => !p.out);
+    G.time -= dt;
+    for (const p of alive) if (p.hurtT > 0) p.hurtT -= dt;
+    // la zone
+    if (!z.warned && G.elapsed >= z.appear - 5) { z.warned = true; G.banner = { text: 'La zone arrive dans 5 s', t: 1.4 }; }
+    if (G.elapsed >= z.appear) {
+      if (!z.on) { z.on = true; G.banner = { text: 'La zone se referme !', t: 1.4 }; }
+      const k = clamp((G.elapsed - z.appear) / Math.max(1, settings.duration - z.appear), 0, 1);
+      z.r = z.r0 * (1 - k) + 30 * k * 0;
+      for (const p of alive) {
+        if (p.travel) continue;
+        if (Math.hypot(p.x + PW / 2 - z.cx, p.y + PH / 2 - z.cy) > z.r) { p.zoneT += dt; if (p.zoneT >= ZONE_TICK) { p.zoneT -= ZONE_TICK; this.hurt(p, null); } }
+      }
+    }
+    // contacts : celui qui fonce (ou qui saute dessus) retire une vie à l'autre
+    for (let i = 0; i < alive.length; i++) for (let j = i + 1; j < alive.length; j++) {
+      const a = alive[i], b = alive[j];
+      if (a.out || b.out || a.travel || b.travel || !overlapP(a, b)) continue;
+      const sx = Math.sign((b.x - a.x) || 1);
+      const stA = a.vy > 120 && a.y + PH - b.y < PH * 0.55, stB = b.vy > 120 && b.y + PH - a.y < PH * 0.55;
+      const va = a.vx * sx, vb = -b.vx * sx;
+      let hit = null, vic = null;
+      if (stA && !stB) { hit = a; vic = b; } else if (stB && !stA) { hit = b; vic = a; }
+      else if (va - vb > 70) { hit = a; vic = b; } else if (vb - va > 70) { hit = b; vic = a; }
+      if (!hit) { a.kbVx = -sx * 220; b.kbVx = sx * 220; continue; }
+      const d = Math.sign((vic.x - hit.x) || sx);
+      if (vic.immuneT <= 0) { this.hurt(vic, hit); vic.immuneT = 1.3; }
+      vic.kbVx = d * 420; vic.vy = -320; vic.onGround = false; vic.ground = null;
+      hit.kbVx = -d * 170; if (hit.vy > 0) hit.vy = -380;
+    }
+    // cœurs : +1 vie (rare)
+    if (G.elapsed >= G.nextHeart && G.hearts.length < 1) {
+      const surf = G.map.solids.filter(s => s.kind === 'plat' && !s.crumble && s.w >= 0.8 * U && s.y > 2 * U);
+      const s = surf[Math.floor(Math.random() * surf.length)], h = { x: s.x + 20 + Math.random() * (s.w - 40), y: s.y - 24 };
+      if (!z.on || Math.hypot(h.x - z.cx, h.y - z.cy) < z.r * 0.8) G.hearts.push(h);
+      G.nextHeart = G.elapsed + rand(22, 32);
+    }
+    for (const p of alive) for (let k = G.hearts.length - 1; k >= 0; k--) { const h = G.hearts[k]; if (!p.travel && p.hp < ZONE_HP && circleRect(h.x, h.y, 12, p)) { p.hp++; G.hearts.splice(k, 1); burst(h.x, h.y, ['#ff4d6d', '#fff']); } }
+    orbsUpdate();
+    const left = G.players.filter(p => !p.out);
+    if (left.length <= 1 && G.players.length > 1) { endGame(left.length ? `${left[0].name} survit !` : 'Plus personne !'); return; }
+    if (G.time <= 0) { G.time = 0; endGame('Temps écoulé !'); }
+  },
+  isWolf: () => false,
+  cdText: () => ['Chacun pour soi : 5 vies', '#ffcf80'],
+  center: () => { const z = G.zone; return { text: !z.on && G.state === 'play' && z.appear - G.elapsed <= 10 ? `Zone ${Math.ceil(z.appear - G.elapsed)}` : fmtCeil(G.time), low: G.time <= 10 }; },
+  chips: () => chipsBasic(p => ({ hot: false, val: p.out ? 'éliminé' : '♥'.repeat(p.hp) })),
+  results() {
+    const arr = [...G.players].sort((a, b) => ((a.out ? 1 : 0) - (b.out ? 1 : 0)) || (b.hp - a.hp) || ((b.outAt || 0) - (a.outAt || 0)) || (b.hits - a.hits));
+    const top = arr[0], winners = arr.filter(p => p.out === top.out && p.hp === top.hp && (p.outAt || 0) === (top.outAt || 0) && p.hits === top.hits);
+    return { winners, title: winners.length > 1 ? 'Égalité !' : `${top.name} gagne !`, color: winners.length > 1 ? '#fff' : top.color, sub: 'Le dernier debout, sinon celui qui a le plus de vies',
+      rows: arr.map(p => ({ p, tag: p.out ? '' : 'DEBOUT', txt: (p.out ? `éliminé à ${fmtFloor(p.outAt)}` : `${p.hp} vie${p.hp > 1 ? 's' : ''}`) + ` · ${p.hits} touche${p.hits > 1 ? 's' : ''}` })) };
+  },
+};
+
+const MODES = { loup: ModeLoup, epervier: ModeEpervier, drapeau: ModeDrapeau, parcours: ModeParcours, zone: ModeZone };
 
 
 /* =========================================================
@@ -1973,6 +2210,7 @@ function updateCamera(dt, snap) {
   if (!(G.state === 'countdown' && G.cd > 1.4 && G.elapsed === 0)) {
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
     for (const p of G.players) {
+      if (p.out && G.players.some(q => !q.out)) continue;
       const x = p.travel ? p.travel.to.x : p.x + PW / 2, y = p.travel ? p.travel.to.y - PH / 2 : p.y + PH / 2;
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
     }
@@ -2054,6 +2292,39 @@ function drawDyn(c, s) {
       if (s.state === 'shake') { c.fillStyle = 'rgba(255,80,60,.5)'; c.fillRect(x, y + h, w, 3); }
       c.restore();
       if (s.state === 'up' || s.state === 'shake') { c.fillStyle = 'rgba(0,0,0,.12)'; c.fillRect(x + 6, s.groundY - 4, w - 12, 4); }
+      break;
+    }
+    case 'pumice': {   // roche ponce : tremble puis s'effrite, revient 4 s plus tard
+      if (s.off) { const k = Math.max(0, 1 - s.t / 4); c.strokeStyle = `rgba(255,220,190,${0.15 + k * 0.35})`; c.setLineDash([5, 5]); c.lineWidth = 1.5; c.strokeRect(x + .75, y + .75, w - 1.5, h - 1.5); c.setLineDash([]); break; }
+      c.save(); c.translate(sx, 0);
+      c.fillStyle = '#b9a58f'; rr(c, x, y, w, h, 4); c.fill();
+      c.fillStyle = '#d8c8b2'; c.fillRect(x + 3, y + 2, w - 6, 3);
+      c.fillStyle = 'rgba(80,60,50,.45)'; for (let i = 0; i < w / 9; i++) { c.beginPath(); c.arc(x + 6 + i * 9 + (i * 7 % 5), y + 8 + (i % 3) * 2, 1.6 + (i % 2), 0, Math.PI * 2); c.fill(); }
+      if (s.state === 'shake') { c.strokeStyle = '#3a2a22'; c.lineWidth = 1.5; c.beginPath(); for (let i = 1; i < 4; i++) { const xx = x + w * i / 4; c.moveTo(xx, y); c.lineTo(xx + 5, y + h / 2); c.lineTo(xx - 3, y + h); } c.stroke(); }
+      c.strokeStyle = '#3a2a22'; c.lineWidth = 1.6; rr(c, x + .8, y + .8, w - 1.6, h - 1.6, 4); c.stroke();
+      c.restore(); break;
+    }
+    case 'flow': {   // coulée : tapis roulant de lave refroidie, les chevrons montrent le sens
+      c.save(); rr(c, x, y, w, h, 5); c.clip();
+      c.fillStyle = '#2b1f26'; c.fillRect(x, y, w, h);
+      const dir = Math.sign(s.conv), off = ((T * s.conv) % 26 + 26) % 26;
+      c.strokeStyle = '#ff8a3a'; c.lineWidth = 3; c.lineCap = 'round';
+      for (let xx = x - 26 + off; xx < x + w + 26; xx += 26) { c.beginPath(); c.moveTo(xx - 4 * dir, y + 3); c.lineTo(xx + 4 * dir, y + h / 2); c.lineTo(xx - 4 * dir, y + h - 3); c.stroke(); }
+      c.fillStyle = 'rgba(255,200,120,.25)'; c.fillRect(x, y, w, 3);
+      c.restore(); c.strokeStyle = '#120a0e'; c.lineWidth = 1.8; rr(c, x + .8, y + .8, w - 1.6, h - 1.6, 5); c.stroke();
+      c.fillStyle = '#4b4452'; for (const xx of [x - 5, x + w - 5]) { c.beginPath(); c.arc(xx + 5, y + h / 2, 7, 0, Math.PI * 2); c.fill(); }
+      break;
+    }
+    case 'basaltblock': {
+      c.save(); c.translate(sx, 0);
+      c.strokeStyle = '#2a1e24'; c.lineWidth = 2; c.beginPath(); c.moveTo(x + w / 2, 0); c.lineTo(x + w / 2, y); c.stroke();
+      c.fillStyle = '#3b3340'; c.beginPath(); c.moveTo(x + 6, y); c.lineTo(x + w - 6, y); c.lineTo(x + w, y + 8); c.lineTo(x + w, y + h); c.lineTo(x, y + h); c.lineTo(x, y + 8); c.closePath(); c.fill();
+      c.strokeStyle = '#ff7a35'; c.lineWidth = 2; c.beginPath(); c.moveTo(x + 12, y + 10); c.lineTo(x + 30, y + 28); c.lineTo(x + 24, y + h - 10); c.moveTo(x + w - 14, y + 14); c.lineTo(x + w - 28, y + 34); c.stroke();
+      c.fillStyle = '#5d5466'; c.fillRect(x + 6, y + 2, w - 12, 4);
+      c.strokeStyle = '#140f18'; c.lineWidth = 1.8; c.stroke();
+      if (s.state === 'shake') { c.fillStyle = 'rgba(255,90,40,.6)'; c.fillRect(x, y + h, w, 3); }
+      c.restore();
+      if (s.state === 'up' || s.state === 'shake') { c.fillStyle = 'rgba(255,90,40,.25)'; c.fillRect(x + 6, s.groundY - 4, w - 12, 4); }
       break;
     }
     case 'trap': {
@@ -2144,6 +2415,12 @@ function drawMarkers(c) {
       const b = Math.sin(T * 6) * 2;
       c.fillStyle = '#ff3b30'; c.strokeStyle = 'rgba(20,10,10,.8)'; c.lineWidth = 2;
       c.beginPath(); c.moveTo(x - 7, y - 22 + b); c.lineTo(x + 7, y - 22 + b); c.lineTo(x, y - 12 + b); c.closePath(); c.fill(); c.stroke();
+    }
+    if (G.mode.hpBars && !p.travel) {
+      const n = ZONE_HP, pw = 6, gap = 2, tw = n * pw + (n - 1) * gap, x0 = x - tw / 2, yy = y - 12;
+      c.fillStyle = 'rgba(10,6,10,.7)'; rr(c, x0 - 3, yy - 3, tw + 6, 10, 4); c.fill();
+      for (let i = 0; i < n; i++) { c.fillStyle = i < p.hp ? (p.hurtT > 0 && Math.floor(T * 20) % 2 ? '#fff' : '#ff4d5e') : 'rgba(255,255,255,.18)'; c.fillRect(x0 + i * (pw + gap), yy, pw, 4); }
+      if (p.zoneT > 0 && G.zone && G.zone.on && Math.hypot(x - G.zone.cx, y + PH / 2 - G.zone.cy) > G.zone.r) { c.fillStyle = '#ffb060'; c.fillRect(x0, yy + 5, tw * (p.zoneT / ZONE_TICK), 2); }
     }
     if (G.flag && G.flag.carrier === p && !p.travel) drawSmallFlag(c, x - 2, y - 18, p.color);
   }
@@ -2238,6 +2515,21 @@ function drawModeWorld(c) {
 /* =========================================================
    RENDU
    ========================================================= */
+function drawZone(c) {
+  const z = G.zone, m = G.map;
+  if (G.hearts) for (const h of G.hearts) { const b = Math.sin(T * 4) * 2; c.fillStyle = '#ff4d6d'; c.strokeStyle = '#5a0f1e'; c.lineWidth = 2; c.beginPath(); c.moveTo(h.x, h.y + 9 + b); c.bezierCurveTo(h.x - 16, h.y - 2 + b, h.x - 8, h.y - 13 + b, h.x, h.y - 5 + b); c.bezierCurveTo(h.x + 8, h.y - 13 + b, h.x + 16, h.y - 2 + b, h.x, h.y + 9 + b); c.fill(); c.stroke(); }
+  if (!z.on) {
+    if (G.state === 'play' && z.appear - G.elapsed <= 5) { const a = 0.4 + 0.3 * Math.sin(T * 8); c.strokeStyle = `rgba(255,120,60,${a})`; c.lineWidth = 4; c.beginPath(); c.arc(z.cx, z.cy, 26, 0, Math.PI * 2); c.stroke(); }
+    return;
+  }
+  c.save();
+  c.beginPath(); c.rect(0, 0, m.W, m.H); c.arc(z.cx, z.cy, Math.max(0, z.r), 0, Math.PI * 2, true);
+  c.fillStyle = 'rgba(25,5,12,.55)'; c.fill('evenodd');
+  if (z.r > 1) { c.strokeStyle = `rgba(255,110,50,${0.75 + 0.2 * Math.sin(T * 5)})`; c.lineWidth = 6; c.beginPath(); c.arc(z.cx, z.cy, z.r, 0, Math.PI * 2); c.stroke(); c.strokeStyle = 'rgba(255,220,150,.6)'; c.lineWidth = 2; c.stroke(); }
+  // le point final
+  c.strokeStyle = 'rgba(255,240,200,.85)'; c.lineWidth = 3; c.beginPath(); c.moveTo(z.cx - 9, z.cy - 9); c.lineTo(z.cx + 9, z.cy + 9); c.moveTo(z.cx + 9, z.cy - 9); c.lineTo(z.cx - 9, z.cy + 9); c.stroke();
+  c.restore();
+}
 function blit(img, m, cx, cy, z) {
   ctx.setTransform(RES * z, 0, 0, RES * z, RES * (VW / 2 - cx * z), RES * (VH / 2 - cy * z));
   ctx.drawImage(img, -MARGIN, -MARGIN, m.W + 2 * MARGIN, m.H + 2 * MARGIN);
@@ -2260,6 +2552,7 @@ function render() {
   drawPlayers(ctx);
   m.dynFront(ctx);
   drawTravel(ctx); drawMarkers(ctx); drawParts(ctx);
+  if (G.zone) drawZone(ctx);
   ctx.restore();
   ctx.setTransform(RES, 0, 0, RES, 0, 0);
   drawHUD();
@@ -2303,6 +2596,7 @@ function drawHUD() {
 function stepGame(dt) {
   if (G.state === 'countdown') { G.cd -= dt; if (G.cd <= 0) { G.state = 'play'; G.mode.onStart(); } }
   updateMovers(dt);
+  updateCrumbles(dt);
   if (G.rot) {
     const R = G.rot; R.dA = R.w * dt; R.ang += R.dA; rotVerts(R);
     for (const p of G.players) if (!p.travel && p.ground && p.ground.rot) carryRot(p, R);
@@ -2431,7 +2725,7 @@ function refreshMenu() {
   if ($('chTime').dataset.kind !== (ep ? 'ep' : 'game')) {
     $('chTime').dataset.kind = ep ? 'ep' : 'game';
     $('lblTime').textContent = ep ? 'Temps / manche' : 'Durée';
-    $('chTime').innerHTML = (ep ? [[30, '30 s'], [45, '45 s'], [60, '1 min']] : [[60, '1 min'], [120, '2 min'], [180, '3 min']]).map(([v, t]) => `<button data-v="${v}">${t}</button>`).join('');
+    $('chTime').innerHTML = (ep ? [[30, '30 s'], [45, '45 s'], [60, '1 min']] : [[60, '1 min'], [120, '2 min'], [180, '3 min'], [240, '4 min'], [300, '5 min']]).map(([v, t]) => `<button data-v="${v}">${t}</button>`).join('');
     selectBtn('chTime', ep ? settings.epRound : settings.duration);
   }
   $('chTime').style.visibility = $('lblTime').style.visibility = (info.timed || ep) ? 'visible' : 'hidden';
@@ -2441,8 +2735,9 @@ function refreshMenu() {
 setupChoices('chMode', v => { settings.mode = v; refreshMenu(); });
 setupChoices('chPlayers', v => settings.players = +v);
 setupChoices('chTime', v => { if (settings.mode === 'epervier') settings.epRound = +v; else settings.duration = +v; });
-setupChoices('chHandling', v => { settings.handling = v; try { localStorage.setItem('ldm_handling', v); } catch (e) {} });
-try { const hv = localStorage.getItem('ldm_handling'); if (HANDLING[hv]) { settings.handling = hv; selectBtn('chHandling', hv); } } catch (e) {}
+function setSens(v) { settings.sens = clamp(Math.round(+v) || 5, 1, 10); $('sens').value = settings.sens; $('sensVal').textContent = settings.sens; try { localStorage.setItem('ldm_sens', settings.sens); } catch (e) {} }
+$('sens').addEventListener('input', e => setSens(e.target.value));
+try { const sv = localStorage.getItem('ldm_sens'); setSens(sv === null ? 5 : sv); } catch (e) { setSens(5); }
 function applyKeyLayout(v) {
   settings.keys2 = v; const d = PLAYER_DEFS[1];
   // les touches sont lues par leur position physique (e.code) : Q Z D en AZERTY = A W D en QWERTY
@@ -2513,6 +2808,7 @@ const RULES = {
   loup: () => `Le <b>loup</b> porte une flèche rouge : touche un autre joueur pour lui passer le rôle. Le joueur touché est figé une seconde. Les <b>perles</b> vont par paire et te téléportent ; ${settings.map === 'epave' ? 'le <b>coffre</b> te propulse en haut de l’épave' : 'la <b>rivière</b> te propulse sur les toits'}. Le moins longtemps loup gagne.`,
   epervier: () => `L’<b>épervier</b> part du nid au centre. Les oiseaux attendent dans la colonne de gauche, qui a deux sorties (en bas, et en haut à gauche où apparaît parfois une <b>perle</b>). Il faut atteindre le <b>trou à droite</b> : là, on est à l’abri. Un oiseau touché devient épervier. Chaque manche dure 30 s : qui n’est pas arrivé est pris. Les oiseaux à l’abri repartent de la niche à la manche suivante.`,
   drapeau: () => `Chaque joueur a sa <b>zone</b>, teintée de sa couleur. Prends le <b>drapeau</b> au centre, touche celui qui le porte pour le lui voler, et garde-le chez toi : <b>1 point par seconde</b>. Attention au mur qui tombe et au carré qui tourne.`,
+  zone: () => `<b>Chacun pour soi</b>, 5 vies (la barre au-dessus de chaque personnage). <b>Fonce</b> sur un adversaire ou <b>saute-lui dessus</b> : il perd une vie. Au bout de ${settings.duration >= 120 ? 'une minute' : Math.round(settings.duration / 3) + ' s'}, la <b>zone</b> se referme sur un point tiré au hasard (une croix) : <b>2 s dehors = une vie en moins</b>. Les <b>geysers</b> soufflent par intermittence et te portent vers le haut, la <b>roche ponce</b> s’effrite sous tes pieds, les <b>coulées</b> t’emportent, et des <b>blocs de basalte</b> tombent sur le sommet. Un <b>cœur</b> rend une vie.`,
   parcours: () => `La <b>souris</b> part en haut à gauche, le <b>chat</b> en bas avec 2 s de retard. La souris doit tirer le <b>levier</b> au fond du couloir : le chat est figé 3 s, la trappe entre les pics s’ouvre, le passage tout en bas du grand mur s’ouvre, et la passerelle du milieu tombe. Passe sous les pics (ou par la trappe), monte par les <b>hachures</b> (le chat passe au travers) et touche la <b>perle</b>.`,
 };
 let loadTimers = [];
@@ -2598,7 +2894,7 @@ function sim(x, y, plan, mapId) {
   const m = mapId && typeof mapId === 'object' ? mapId : (saveG ? saveG.map : MAP_BUILDERS[mapId || 'epave']());
   G = { map: m, solids: m.solids, movers: [], rot: null, players: [], parts: [], state: 'play', trapOpen: !!plan.trap, mode: { canMove: () => true, speed: () => 1, onCrush() {} } };
   const p = newPlayer(PLAYER_DEFS[0], { x, y }); G.players.push(p);
-  p.onGround = true;
+  p.onGround = true; p.mvx = (plan.dir || 0) * RUN * 0.9;   // on arrive en courant
   let t = 0, air = false, res = null;
   while (t < 4) {
     const d = (plan.sw && t >= plan.sw[0]) ? plan.sw[1] : plan.dir;
